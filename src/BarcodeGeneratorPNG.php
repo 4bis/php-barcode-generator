@@ -49,48 +49,88 @@ class BarcodeGeneratorPNG extends BarcodeGenerator
      * @param array $foregroundColor RGB (0-255) foreground color for bar elements (background is transparent).
      * @return string image data or false in case of error.
      */
-    public function getBarcode($barcode, $type, int $widthFactor = 2, int $height = 30, array $foregroundColor = [0, 0, 0])
+    public function getBarcode($code, $type, $widthFactor = 2, $totalHeight = 30, $color = array(0, 0, 0))
     {
-        $barcodeData = $this->getBarcodeData($barcode, $type);
-        $width = round($barcodeData->getWidth() * $widthFactor);
+        $barcodeData = $this->getBarcodeData($code, $type);
 
-        if ($this->useImagick) {
-            $imagickBarsShape = new imagickdraw();
-            $imagickBarsShape->setFillColor(new imagickpixel('rgb(' . implode(',', $foregroundColor) .')'));
+        // calculate image size
+        $width = ($barcodeData->getWidth() * $widthFactor);
+        $height = $totalHeight;
+
+        if (function_exists('imagecreate')) {
+            // GD library
+            $imagick = false;
+            $png = imagecreate($width, $height + 20); // +20 (+)
+            $colorBackground = imagecolorallocate($png, 255, 255, 255);
+            imagecolortransparent($png, $colorBackground);
+            $colorForeground = imagecolorallocate($png, $color[0], $color[1], $color[2]);
+        } elseif (extension_loaded('imagick')) {
+            $imagick = true;
+            $colorForeground = new \imagickpixel('rgb(' . $color[0] . ',' . $color[1] . ',' . $color[2] . ')');
+            $png = new \Imagick();
+            $png->newImage($width, $height + 20, 'none', 'png'); // +20 (+)
+            $imageMagickObject = new \imagickdraw();
+            $imageMagickObject->setFillColor($colorForeground);
         } else {
-            $image = $this->createGdImageObject($width, $height);
-            $gdForegroundColor = imagecolorallocate($image, $foregroundColor[0], $foregroundColor[1], $foregroundColor[2]);
+            return false;
         }
 
         // print bars
         $positionHorizontal = 0;
-        /** @var BarcodeBar $bar */
         foreach ($barcodeData->getBars() as $bar) {
-            $barWidth = round(($bar->getWidth() * $widthFactor), 3);
-
-            if ($bar->isBar() && $barWidth > 0) {
-                $y = round(($bar->getPositionVertical() * $height / $barcodeData->getHeight()), 3);
-                $barHeight = round(($bar->getHeight() * $height / $barcodeData->getHeight()), 3);
-
+            $bw = round(($bar->getWidth() * $widthFactor), 3);
+            $bh = round(($bar->getHeight() * $totalHeight / $barcodeData->getHeight()), 3);
+            if ($bar->isBar()) {
+                $y = round(($bar->getPositionVertical() * $totalHeight / $barcodeData->getHeight()), 3);
                 // draw a vertical bar
-                if ($this->useImagick && isset($imagickBarsShape)) {
-                    $imagickBarsShape->rectangle($positionHorizontal, $y, ($positionHorizontal + $barWidth - 1), ($y + $barHeight));
+                if ($imagick && isset($imageMagickObject)) {
+                    $imageMagickObject->rectangle($positionHorizontal, $y, ($positionHorizontal + $bw), ($y + $bh));
                 } else {
-                    imagefilledrectangle($image, $positionHorizontal, $y, ($positionHorizontal + $barWidth - 1), ($y + $barHeight), $gdForegroundColor);
+                    imagefilledrectangle($png, $positionHorizontal, $y, ($positionHorizontal + $bw) - 1, ($y + $bh),
+                        $colorForeground);
                 }
             }
-            $positionHorizontal += $barWidth;
+            $positionHorizontal += $bw;
         }
 
-        if ($this->useImagick && isset($imagickBarsShape)) {
-            $image = $this->createImagickImageObject($width, $height);
-            $image->drawImage($imagickBarsShape);
-            return $image->getImageBlob();
+        if ($imagick && isset($imageMagickObject)) {
+            $draw = new ImagickDraw();
+            $draw->setFillColor('black');
+
+            /* Font properties */
+            $draw->setFont('Bookman-DemiItalic');
+            $draw->setFontSize(5);
+
+            // Write the barcode's code, change $code to write other text
+            $imageMagickObject->annotateImage($draw, 0, $height + 5, 0, $code);
+        } else {
+            // Detect center position
+            $font = 7;
+            $font_width = ImageFontWidth($font);
+            $font_height = ImageFontHeight($font);
+            $text_width = $font_width * strlen($code);
+            $position_center = ceil(($width - $text_width) / 2);
+
+            // Default font
+            // Write the barcode's code, change $code to write other text
+            imagestring($png, 7, $position_center, $height + 5, $code, imagecolorallocate($png, 0, 0, 0));
+
+            // For custom font specify path to font file
+            /*$fontPath = '..\font.ttf';
+            imagettftext($png, 12, 0, $position_center, $height + 5, imagecolorallocate($png, 0, 0, 0), $fontPath, $code);*/
         }
 
         ob_start();
-        $this->generateGdImage($image);
-        return ob_get_clean();
+        if ($imagick && isset($imageMagickObject)) {
+            $png->drawImage($imageMagickObject);
+            echo $png;
+        } else {
+            imagepng($png);
+            imagedestroy($png);
+        }
+        $image = ob_get_clean();
+
+        return $image;
     }
 
     protected function createGdImageObject(int $width, int $height)
@@ -102,10 +142,17 @@ class BarcodeGeneratorPNG extends BarcodeGenerator
         return $image;
     }
 
-    protected function createImagickImageObject(int $width, int $height): Imagick
+    protected function createImagickImageObject(int $width, int $height, string $barcode): Imagick
     {
         $image = new Imagick();
+
+        $draw = new ImagickDraw();
+        $draw->setFillColor('black');
+        $draw->setFont('Bookman-DemiItalic');
+        $draw->setFontSize(5);
+
         $image->newImage($width, $height, 'none', 'PNG');
+        $image->annotateImage($draw, 0, $height + 5, 0, $barcode);
 
         return $image;
     }
