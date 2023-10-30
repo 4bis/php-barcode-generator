@@ -1,3 +1,6 @@
+Our further software updates and functionality upgrade. Interested in extra features? 
+https://4bis.nl/en/contact 
+
 # PHP Barcode Generator 
 [![Build Status](https://travis-ci.org/picqer/php-barcode-generator.svg?branch=main)](https://travis-ci.org/picqer/php-barcode-generator) [![Github Actions](https://github.com/picqer/php-barcode-generator/workflows/phpunit/badge.svg)](https://travis-ci.org/picqer/php-barcode-generator) [![Total Downloads](https://poser.pugx.org/picqer/php-barcode-generator/downloads)](https://packagist.org/packages/picqer/php-barcode-generator)
 
